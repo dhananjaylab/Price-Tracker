@@ -1,4 +1,8 @@
+fastapi
+uvicorn
+sqlalchemy
 requests
 beautifulsoup4
 python-dotenv
-schedule
+apscheduler
+fake-useragent
