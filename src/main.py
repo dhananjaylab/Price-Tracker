@@ -18,7 +18,7 @@ from .scraper import fetch_amazon_price
 # --- CONFIG ---
 load_dotenv()
 SQLALCHEMY_DATABASE_URL = "sqlite:///./data/tracker.db"
-os.makedirs("data", exist_ok=True)
+from fastapi import FastAPI, Depends
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -149,7 +149,6 @@ def home():
 @app.post("/products", response_model=ProductResponse, tags=["Products"])
 def add_product(product: ProductCreate, db: Session = Depends(get_db)):
     """Add a new Amazon product to track."""
-    
     # Check if URL already exists
     existing = db.query(Product).filter(Product.url == product.url).first()
     if existing:

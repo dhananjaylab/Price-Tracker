@@ -153,6 +153,31 @@ id | product_id | price | timestamp
 - Wait 1-2 hours or restart your router/VPN
 - The scheduler will keep retrying
 
+## 🛡️ Robust Scraping Features
+
+Recent updates make scraping more resilient against Amazon's anti-bot measures:
+
+- **Proxy Support:** Set `HTTP_PROXY` and `HTTPS_PROXY` in your `.env` to route requests through a proxy.
+- **User-Agent Rotation:** If `fake-useragent` is installed, the tracker rotates User-Agent strings for each request.
+- **Longer Random Delays:** Scraping now waits 5–15 seconds between requests to mimic human behavior.
+- **CAPTCHA Cooldown:** If a CAPTCHA is detected, scraping pauses for 2 hours (tracked in `data/captcha_cooldown.txt`).
+- **Debug HTML:** Failed scrapes save the HTML to `debug_fail.html` for inspection.
+
+### Example `.env` additions for proxies:
+```ini
+HTTP_PROXY=http://your-proxy:port
+HTTPS_PROXY=http://your-proxy:port
+```
+
+### To enable User-Agent rotation:
+```bash
+pip install fake-useragent
+```
+
+If you hit a CAPTCHA, scraping will automatically pause and resume after the cooldown period.
+
+---
+
 ### "Could not extract price"
 - Amazon's page layout may have changed
 - Run `/trigger-scan` and check the `/products/{id}` response
@@ -184,11 +209,13 @@ analysis = openai.ChatCompletion.create(
 ```
 
 ### 3. **Frontend Dashboard**
-Create a simple Streamlit/React UI that visualizes price charts:
+Create a simple Streamlit UI that visualizes price charts:
 ```bash
-pip install streamlit
-streamlit run dashboard.py
+pip install streamlit pandas plotly
+streamlit run src/ui.py
 ```
+
+In Codespaces, after running the above command, open the Ports tab and click the link for port 8501 to view the dashboard. On local machines, visit [http://localhost:8501](http://localhost:8501).
 
 ### 4. **Docker Deployment**
 Containerize the app for cloud deployment (AWS, Heroku, etc.)

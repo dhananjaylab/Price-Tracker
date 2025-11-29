@@ -10,6 +10,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from email.message import EmailMessage
 from dotenv import load_dotenv
+from datetime import timedelta
 
 # Load environment variables
 load_dotenv()
@@ -20,10 +21,13 @@ class AmazonPriceTracker:
         self.target_price = float(os.getenv('TARGET_PRICE', 0))
         self.csv_file = 'data/price_history.csv'
         self.session = requests.Session()
-        
-        # Hardcoded modern User-Agent often works better than random ones for Amazon
+        try:
+            from fake_useragent import UserAgent
+            self.ua = UserAgent()
+        except ImportError:
+            self.ua = None
         self.base_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'User-Agent': self.ua.random if self.ua else 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -32,7 +36,7 @@ class AmazonPriceTracker:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
-        
+        self.cooldown_file = 'data/captcha_cooldown.txt'
         # Ensure data directory exists
         os.makedirs('data', exist_ok=True)
         if not os.path.exists(self.csv_file):
@@ -43,35 +47,57 @@ class AmazonPriceTracker:
     def fetch_price(self):
         """Scrapes Amazon with multi-layer fallback strategies."""
         print(f"[*] Checking price for product...")
-        
-        # Add random delay to seem human
-        time.sleep(random.uniform(1, 3))
-        
+        # Check for cooldown after CAPTCHA
+        if os.path.exists(self.cooldown_file):
+            with open(self.cooldown_file, 'r') as f:
+                cooldown_until = f.read().strip()
+            if cooldown_until:
+                try:
+                    cooldown_dt = datetime.strptime(cooldown_until, "%Y-%m-%d %H:%M:%S")
+                    if datetime.now() < cooldown_dt:
+                        print(f"[!] CAPTCHA detected previously. Pausing scraping until {cooldown_until}.")
+                        return None
+                    else:
+                        os.remove(self.cooldown_file)
+                except Exception:
+                    os.remove(self.cooldown_file)
+        # Add longer random delay to seem human
+        time.sleep(random.uniform(5, 15))
+        # Rotate User-Agent if possible
+        if self.ua:
+            self.base_headers['User-Agent'] = self.ua.random
+        # Optional: Use proxy if set in environment
+        proxies = {}
+        http_proxy = os.getenv('HTTP_PROXY')
+        https_proxy = os.getenv('HTTPS_PROXY')
+        if http_proxy:
+            proxies['http'] = http_proxy
+        if https_proxy:
+            proxies['https'] = https_proxy
         try:
-            response = self.session.get(self.url, headers=self.base_headers)
-            
+            response = self.session.get(self.url, headers=self.base_headers, proxies=proxies if proxies else None, timeout=20)
             if response.status_code != 200:
                 print(f"[!] Blocked/Error: HTTP {response.status_code}")
                 return None
-
             soup = BeautifulSoup(response.content, 'html.parser')
-
             # 1. Check for Bot Detection (CAPTCHA)
             if "Enter the characters you see below" in soup.get_text():
                 print("[!] ALERT: Amazon presented a CAPTCHA. IP might be temporarily flagged.")
                 self.save_debug_html(soup)
+                # Set cooldown for 2 hours
+                cooldown_until = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
+                with open(self.cooldown_file, 'w') as f:
+                    f.write(cooldown_until)
+                print(f"[!] Pausing scraping until {cooldown_until} due to CAPTCHA.")
                 return None
-
             # 2. Strategy: Try Multiple Selectors
             price = self.extract_price_logic(soup)
-            
             if price:
                 return price
             else:
                 print("[!] Error: Could not extract price. Layout might have changed.")
                 self.save_debug_html(soup)
                 return None
-                
         except Exception as e:
             print(f"[!] Network Exception: {e}")
             return None
